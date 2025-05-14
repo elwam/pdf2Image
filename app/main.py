@@ -1,7 +1,8 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from pdf2image import convert_from_bytes
-import base64
+import pytesseract
+from PIL import Image
 import io
 
 app = FastAPI()
@@ -10,16 +11,26 @@ app = FastAPI()
 async def convert_pdf(file: UploadFile = File(...)):
     try:
         pdf_bytes = await file.read()
-        images = convert_from_bytes(pdf_bytes)
-        encoded_images = []
 
-        for image in images:
-            buffer = io.BytesIO()
-            image.save(buffer, format="JPEG")
-            img_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
-            encoded_images.append(img_str)
+        # Convierte todas las páginas del PDF a imágenes con alta resolución
+        images = convert_from_bytes(pdf_bytes, dpi=300)
 
-        return JSONResponse(content={"pages": encoded_images})
+        ocr_results = []
+
+        for i, image in enumerate(images):
+            # Opcional: convertir a escala de grises + mejorar contraste
+            gray = image.convert("L")
+
+            # Ejecutar OCR
+            text = pytesseract.image_to_string(gray)
+
+            # Agregar resultado al array
+            ocr_results.append({
+                "page": i + 1,
+                "text": text.strip()
+            })
+
+        return JSONResponse(content={"pages": ocr_results})
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
