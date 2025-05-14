@@ -15,7 +15,7 @@ async def convert_pdf(file: UploadFile = File(...)):
 
         for image in images:
             buffer = io.BytesIO()
-            image.save(buffer, format="PNG")
+            image.save(buffer, format="JPEG")
             img_str = base64.b64encode(buffer.getvalue()).decode("utf-8")
             encoded_images.append(img_str)
 
