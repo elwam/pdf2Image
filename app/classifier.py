@@ -57,6 +57,7 @@ def limpiar_texto_factura(texto: str) -> str:
     texto_limpio = re.sub(r'\s+', ' ', texto_limpio).strip()
     return texto_limpio
 
+
 def clasificar_factura_examenes(texto_factura: str) -> dict:
     """
     Analiza el texto de una factura para determinar si contiene ítems de exámenes médicos.
@@ -65,21 +66,18 @@ def clasificar_factura_examenes(texto_factura: str) -> dict:
         texto_factura (str): El texto extraído de la factura.
 
     Returns:
-        dict: Un diccionario con la forma {"examenesFacturados": 1} o {"examenesFacturados": 0}.
-              Podríamos añadir una clave "decision_source": "rules" para indicar que fue por reglas.
+        dict: Un diccionario con la clasificación.
+              Si no se puede identificar con reglas:
+              {"examenesFacturados": -1, "decision_source": "REVISAR_CON_LLM", "texto_limpio": "..."}
+              Si se identifica por reglas:
+              {"examenesFacturados": 0 o 1, "decision_source": "rules_...", "texto_limpio": "..."}
     """
     texto_limpio = limpiar_texto_factura(texto_factura)
 
     # Indicador primario muy fuerte
     if "procedimientos diagnostico" in texto_limpio:
-        # Si encontramos esto, es muy probable que sean exámenes.
-        # Podríamos añadir verificaciones adicionales si fuera necesario,
-        # por ejemplo, si "consultas" también aparece prominentemente cerca,
-        # pero por ahora, "procedimientos diagnostico" es un buen indicador.
-        return {"examenesFacturados": 1, "decision_source": "rules", "texto_limpio": texto_limpio}
+        return {"examenesFacturados": 1, "decision_source": "rules_procedimientos_diagnostico", "texto_limpio": texto_limpio}
 
-    # Palabras clave secundarias indicativas de exámenes
-    # Esta lista puede crecer. Considera sinónimos o variaciones.
     palabras_clave_examenes = [
         "radiografia", "radiografía", "rayos x",
         "ecografia", "ecografía", "ultrasonido",
@@ -104,26 +102,22 @@ def clasificar_factura_examenes(texto_factura: str) -> dict:
         # Añade más según los tipos de exámenes que suelas encontrar
     ]
 
-    if any(clave in texto_limpio for clave in palabras_clave_examenes):
-        # Si encontramos alguna de estas palabras, pero NO "procedimientos diagnostico",
-        # aún es probable que sea un examen. Sin embargo, hay que tener cuidado
-        # si estas palabras pueden aparecer en contextos de consulta (ej. "discutir resultados de la ecografía").
-        # Por ahora, si alguna de estas está, lo contamos como examen,
-        # PERO si "consultas" es la sección dominante, "consultas" debería ganar.
+    encontrada_palabra_clave_examen = any(clave in texto_limpio for clave in palabras_clave_examenes)
 
-        # Si "consultas" aparece de forma prominente y no "procedimientos diagnostico",
-        # es menos probable que la factura sea *principalmente* de exámenes.
+    if encontrada_palabra_clave_examen:
+        # Si encontramos palabras clave de exámenes, revisamos si "consultas" es dominante
+        # y "procedimientos diagnostico" no está (ya cubierto arriba).
         if "consultas" in texto_limpio and "procedimientos diagnostico" not in texto_limpio:
-             # Aquí podrías tener una lógica más compleja. Si "consultas" y alguna palabra de examen
-             # aparecen, ¿qué decides? Por ahora, si "consultas" está y "proc diag" no, es 0.
-            return {"examenesFacturados": 0, "decision_source": "rules_consultas_presentes", "texto_limpio": texto_limpio}
+             # Palabras de examen presentes, pero "consultas" también y sin "procedimientos diagnostico".
+             # Decidimos que "consultas" tiene más peso en este escenario para marcarla como NO examen.
+            return {"examenesFacturados": 0, "decision_source": "rules_consultas_sobre_exam_keywords", "texto_limpio": texto_limpio}
+        # Si no, y hay palabras clave de examen, es examen.
         return {"examenesFacturados": 1, "decision_source": "rules_palabras_clave_examen", "texto_limpio": texto_limpio}
 
-    # Si la palabra "consultas" está presente y ninguna de las anteriores se cumplió
-    if "consultas" in texto_limpio:
-        return {"examenesFacturados": 0, "decision_source": "rules_consultas", "texto_limpio": texto_limpio}
+    # Si la palabra "consultas" está presente y NINGUNA palabra clave de examen fue encontrada
+    if "consultas" in texto_limpio: # y no encontrada_palabra_clave_examen (implícito por el flujo)
+        return {"examenesFacturados": 0, "decision_source": "rules_solo_consultas", "texto_limpio": texto_limpio}
         
-    # Si no se cumple ninguna de las condiciones anteriores, asumimos que no son exámenes.
-    # Opcionalmente, podrías tener un caso para enviar a LLM aquí si la confianza es baja.
-    # return {"examenesFacturados": "REVISAR_CON_LLM"} # Si quisieras un fallback a LLM
-    return {"examenesFacturados": 0, "decision_source": "rules_no_indicadores", "texto_limpio": texto_limpio}
+    # Si no se cumple ninguna de las condiciones anteriores, no podemos identificarla con reglas.
+    # Marcamos para revisión con LLM.
+    return {"examenesFacturados": -1, "decision_source": "REVISAR_CON_LLM", "texto_limpio": texto_limpio}
