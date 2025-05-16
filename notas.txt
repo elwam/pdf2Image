@@ -1,0 +1,3 @@
+Para ejecutar el API en local ejecutar
+
+uvicorn app.main:app --reload
