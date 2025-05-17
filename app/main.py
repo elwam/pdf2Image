@@ -5,7 +5,7 @@ from pdf2image import convert_from_bytes
 import pytesseract
 
 from .classifier import clasificar_texto_por_reglas, clasificar_factura_examenes
-
+from .funciones import limpiar_texto
 
 app = FastAPI()
 
@@ -91,6 +91,14 @@ async def clasificar_factura_endpoint(request_data: TextoParaClasificarRequest):
         # import traceback
         # print(f"Error en /clasificar-factura-examenes: {traceback.format_exc()}")
         return JSONResponse(status_code=500, content={"error": f"Error interno del servidor en clasificación de factura: {str(e)}"})
+    
+@app.post("/limpiar-texto")
+async def endpoint_limpiar_texto(data: TextoParaClasificarRequest):
+    texto_limpio = limpiar_texto(data.texto)
+    return {
+        "texto_limpio": texto_limpio,
+        "longitud": len(texto_limpio)
+    }
 
 @app.get("/")
 async def root():
@@ -99,6 +107,7 @@ async def root():
         "endpoints": { # Usar un diccionario para mejor legibilidad
             "/convert-pdf": "POST, multipart/form-data, 'file' -> Extrae texto de un PDF.",
             "/clasificar-texto-adicional": "POST, json, {'texto_documento': 'string'} -> Clasifica texto general por reglas.",
-            "/clasificar-factura-examenes": "POST, json, {'texto_documento': 'string'} -> Clasifica si una factura tiene exámenes."
+            "/clasificar-factura-examenes": "POST, json, {'texto_documento': 'string'} -> Clasifica si una factura tiene exámenes.",
+            "/limpiar-texto": "POST, json, {'texto': 'string'} -> Limpia el texto (minúsculas y espacios).",
         }
     }
