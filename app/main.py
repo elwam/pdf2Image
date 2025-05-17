@@ -13,6 +13,9 @@ app = FastAPI()
 class TextoParaClasificarRequest(BaseModel):
     texto_documento: str # El texto completo del documento a clasificar
 
+class TextoLimpiezaRequest(BaseModel):
+    texto: str
+
 # --- Endpoint 1: Extracción de texto de PDF (sin cambios) ---
 @app.post("/convert-pdf")
 async def convert_pdf(file: UploadFile = File(...)):
@@ -93,12 +96,13 @@ async def clasificar_factura_endpoint(request_data: TextoParaClasificarRequest):
         return JSONResponse(status_code=500, content={"error": f"Error interno del servidor en clasificación de factura: {str(e)}"})
     
 @app.post("/limpiar-texto")
-async def endpoint_limpiar_texto(data: TextoParaClasificarRequest):
+async def endpoint_limpiar_texto(data: TextoLimpiezaRequest):
     texto_limpio = limpiar_texto(data.texto)
     return {
         "texto_limpio": texto_limpio,
         "longitud": len(texto_limpio)
     }
+    
 
 @app.get("/")
 async def root():
