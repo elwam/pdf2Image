@@ -1,34 +1,41 @@
 import re
 
 def limpiar_texto(texto: str) -> str:
-    """Limpia el texto convirtiéndolo a minúsculas y eliminando espacios extra."""
+    if not texto:
+        return ""
     texto_limpio = texto.lower()
-    texto_limpio = re.sub(r'\s+', ' ', texto_limpio).strip()
+    texto_limpio = re.sub(r'\s+', ' ', texto_limpio).strip() # Elimina espacios extra y convierte a minúsculas
     return texto_limpio
 
-def clasificar_texto_por_reglas(texto_ocr: str) -> tuple[str, str]:
+def clasificar_texto_por_reglas(texto_original_de_fuente: str) -> tuple[str, str]:
     """
     Clasifica el texto basado en reglas predefinidas.
-
-    Args:
-        texto_ocr (str): El texto extraído por OCR.
-
-    Returns:
-        tuple[str, str]: Una tupla conteniendo (clasificacion, texto_limpio_para_llm).
-                         Si la clasificación es por reglas, texto_limpio_para_llm puede ser el texto original o limpiado.
-                         Si necesita LLM, clasificación será "REVISAR_CON_LLM" y texto_limpio_para_llm será el texto para enviar al LLM.
+    Devuelve (clasificacion, texto_para_siguiente_paso).
+    - Si la clasificacion es por reglas: (categoria, texto_original_de_fuente)
+    - Si necesita LLM: ("REVISAR_CON_LLM", texto_limpio_para_llm)
+    - Si el texto es vacío/inválido: ("sin_clasificacion", "") o ("documento_vacio", "")
     """
-    texto_limpio_original = limpiar_texto(texto_ocr) # Limpiamos una vez para las reglas
+    # --- AJUSTE PARA TEXTO VACÍO O SOLO ESPACIOS ---
+    if not texto_original_de_fuente or texto_original_de_fuente.isspace():
+        return "sin_clasificacion", "" # O "documento_vacio", ""
+
+    # Limpiamos el texto para la comparación de keywords
+    # Guardamos el original para devolverlo si la clasificación es por reglas (para auditoría)
+    texto_limpio_para_reglas = limpiar_texto(texto_original_de_fuente)
 
     # Regla de autorización
-    if "autorización" in texto_limpio_original or "autorizacion" in texto_limpio_original:
-        return "autorizacion", texto_ocr # Devolvemos texto OCR original por si se necesita
+    if "autorización" in texto_limpio_para_reglas or "autorizacion" in texto_limpio_para_reglas:
+        return "autorizacion", texto_original_de_fuente
 
     # Regla de soporte de recibido
-    if "formato de recibido usuario" in texto_limpio_original or \
-       "certifico que recibí a satisfaccion" in texto_limpio_original or \
-       "certifico que recibi a satisfaccion" in texto_limpio_original:
-        return "soporte_de_recibido", texto_ocr
+    # Normalizamos la búsqueda de "satisfaccion"
+    palabras_clave_recibido = [
+        "formato de recibido usuario",
+        "certifico que recibí a satisfaccion", # con tilde
+        "certifico que recibi a satisfaccion"  # sin tilde
+    ]
+    if any(clave in texto_limpio_para_reglas for clave in palabras_clave_recibido):
+        return "soporte_de_recibido", texto_original_de_fuente
 
     # Regla de orden médica
     palabras_clave_orden = [
@@ -36,17 +43,18 @@ def clasificar_texto_por_reglas(texto_ocr: str) -> tuple[str, str]:
         "diagnóstico", "diagnostico", "observaciones", "cita de control",
         "consulta especializada", "formulación", "formulacion", "remisión", "remision"
     ]
-    codigos_medicos_regex = r"\b([A-Z][0-9]{2,6}|[A-Z]{2,3}[0-9]{1,4})\b" # Ajusta según necesidad
+    
+    # Aplicar regex de códigos al texto original (case-insensitive) ya que los códigos pueden tener mayúsculas/minúsculas
+    # y la limpieza a minúsculas podría perder esa distinción si no se maneja el regex apropiadamente.
+    # El patrón que tenías es bueno para esto: r"\b([A-Z][0-9]{2,6}|[A-Z]{2,3}[0-9]{1,4})\b"
+    encontro_codigo_medico = re.search(r"\b([A-Z][0-9]{2,6}|[A-Z]{2,3}[0-9]{1,4})\b", texto_original_de_fuente, re.IGNORECASE)
 
-    # Para las palabras clave, usamos el texto limpiado (minúsculas)
-    # Para el regex de códigos, es mejor usar el texto OCR original si la capitalización importa
-    if any(clave in texto_limpio_original for clave in palabras_clave_orden) or \
-       re.search(codigos_medicos_regex, texto_ocr, re.IGNORECASE):
-        return "orden_medica", texto_ocr
+    if any(clave in texto_limpio_para_reglas for clave in palabras_clave_orden) or encontro_codigo_medico:
+        return "orden_medica", texto_original_de_fuente
 
-    # Si ninguna regla coincide, indicamos que necesita revisión por LLM
-    # Devolvemos el texto OCR original para el LLM
-    return "REVISAR_CON_LLM", texto_ocr
+    # Si ninguna regla coincide, indicamos que necesita revisión por LLM.
+    # Devolvemos el texto LIMPIO para el LLM, que ya tenemos en texto_limpio_para_reglas.
+    return "REVISAR_CON_LLM", texto_limpio_para_reglas
 
 
 def limpiar_texto_factura(texto: str) -> str:
