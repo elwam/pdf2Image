@@ -20,4 +20,4 @@ COPY app/ ./app
 
 # Ejecuta Gunicorn con workers Uvicorn
 # CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000"]
-CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--timeout", "300", "--graceful-timeout", "60", "--limit-request-line", "8190", "--limit-request-field_size", "8190"]
+CMD ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "app.main:app", "--bind", "0.0.0.0:8000", "--timeout", "300", "--graceful-timeout", "240", "--limit-request-line", "8190", "--limit-request-field_size", "8190"]

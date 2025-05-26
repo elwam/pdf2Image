@@ -22,7 +22,7 @@ async def convert_pdf(file: UploadFile = File(...)):
     try:
         pdf_bytes = await file.read()
         # Convierte todas las páginas del PDF a imágenes con alta resolución
-        images = convert_from_bytes(pdf_bytes, dpi=300)
+        images = convert_from_bytes(pdf_bytes, dpi=200)
         ocr_results = []
 
         for i, image in enumerate(images):
