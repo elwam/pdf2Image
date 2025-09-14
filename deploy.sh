@@ -4,7 +4,7 @@
 #cd /ruta/a/tu/proyecto || exit
 
 # Actualiza el repositorio
-git pull
+#git pull
 
 # Detiene y elimina el contenedor actual
 sudo docker stop pdf2image_container

@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 gunicorn
 pytesseract
+pypdf
 pdf2image
 pillow
 python-multipart
