@@ -1,19 +1,28 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Body
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel # Para definir el cuerpo de la solicitud del nuevo endpoint
+from pydantic import BaseModel
 from pdf2image import convert_from_bytes
-from typing import List
+from typing import List, Optional
 from io import BytesIO
 import pytesseract
-
+import base64
 
 from .funciones import limpiar_texto
-from .merge import merge_pdfs_from_uploadfiles, PdfMergeError
+from .merge import merge_pdfs_from_uploadfiles, PdfMergeError, merge_pdfs_from_bytes
 
 app = FastAPI(title="API OCR/Limpieza/Merge PDF")
 
 class TextoLimpiezaRequest(BaseModel):
     texto: str
+
+# Definición de las Clases para el Merge de PDF
+class PdfJson(BaseModel):
+    name: Optional[str] = None
+    data_b64: str
+    mime_type: Optional[str] = "application/pdf"
+
+class MergeJsonRequest(BaseModel):
+    files: List[PdfJson]
 
 @app.get("/")
 async def root():
@@ -73,4 +82,34 @@ async def merge_pdf(files: List[UploadFile] = File(..., description="Uno o más 
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(500, f"Error interno al fusionar PDFs: {e}")
+
+
+@app.post("/merge-pdf-json", response_class=StreamingResponse)
+async def merge_pdf_json(req: MergeJsonRequest):
+    try:
+        if not req.files:
+            raise HTTPException(400, "Debe enviar al menos un archivo en 'files'.")
+
+        blobs: List[bytes] = []
+        for item in req.files:
+            if item.mime_type not in ("application/pdf", "application/octet-stream", None):
+                raise HTTPException(400, f"Tipo no permitido: {item.mime_type}")
+            try:
+                blobs.append(base64.b64decode(item.data_b64))
+            except Exception:
+                raise HTTPException(400, "Uno de los 'data_b64' no es base64 válido.")
+
+        merged_bytes, total_pages = merge_pdfs_from_bytes(blobs)
+
+        headers = {
+            "Content-Disposition": 'attachment; filename="merged_from_json.pdf"',
+            "X-Merged-Pages": str(total_pages),
+        }
+        return StreamingResponse(BytesIO(merged_bytes), media_type="application/pdf", headers=headers)
+    except PdfMergeError as e:
+        raise HTTPException(400, str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Error interno al fusionar PDFs (JSON): {e}")
 

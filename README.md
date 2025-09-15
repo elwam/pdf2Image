@@ -11,6 +11,7 @@ Basada en pdf2image, pytesseract y pypdf. Incluye Dockerfile para despliegue y e
 - OCR página por página desde archivos PDF.
 - Normalización básica de texto: minúsculas y colapso de espacios.
 - Fusión de múltiples PDFs, devolviendo un PDF descargable y un header con el total de páginas.
+- Fusión vía multipart/form-data o vía JSON con base64 (/merge-pdf-json).
 - Documentación automática con Swagger en /docs.
 
 ## Endpoints
@@ -18,6 +19,7 @@ Basada en pdf2image, pytesseract y pypdf. Incluye Dockerfile para despliegue y e
 - POST /convert-pdf → multipart/form-data con 'file' (PDF). Devuelve JSON con texto por página.
 - POST /limpiar-texto → JSON {"texto":"..."} Devuelve texto_limpio y longitud.
 - POST /merge-pdf → multipart/form-data con uno o más 'files' (PDF). Devuelve merged.pdf y header X-Merged-Pages.
+- POST /merge-pdf-json → JSON {"files":[{"name":"a.pdf","data_b64":"<base64>","mime_type":"application/pdf"}]}. Devuelve merged_from_json.pdf y header X-Merged-Pages.
 
 ## Requisitos
 - Python 3.10+
@@ -84,6 +86,16 @@ curl -X POST http://localhost:8000/merge-pdf \
 
 Nota: /merge-pdf devuelve cabecera X-Merged-Pages con el total de páginas del PDF resultante.
 
+Fusión de múltiples PDFs (JSON base64):
+
+```
+curl -X POST http://localhost:8000/merge-pdf-json \
+  -H "Content-Type: application/json" \
+  -d "{\"files\":[{\"name\":\"a.pdf\",\"data_b64\":\"<BASE64_DEL_PDF>\",\"mime_type\":\"application/pdf\"},{\"name\":\"b.pdf\",\"data_b64\":\"<BASE64_DEL_PDF>\",\"mime_type\":\"application/pdf\"}]}" \
+  -o merged_from_json.pdf
+```
+
+Nota: en /merge-pdf-json el campo data_b64 debe contener el binario del PDF codificado en base64 (sin prefijos como data:application/pdf;base64,).
 ## Uso con Docker
 Construir imagen:
 
@@ -122,6 +134,7 @@ También puedes usar el script deploy.sh (Linux) como referencia de despliegue n
 
   Asegúrate de tener instalado el paquete de datos de idioma de Tesseract (spa).
 
+- /merge-pdf-json acepta mime_type "application/pdf", "application/octet-stream" o None; si data_b64 no es base64 válido se responde 400.
 - El DPI usado en OCR es 200 por defecto en convert_from_bytes; puedes ajustarlo según calidad/tiempo.
 - Se ignoran todos los archivos *.pdf vía .gitignore. Si necesitas adjuntar muestras, renómbralas (por ej. .pdf.sample) o crea excepciones específicas.
 
