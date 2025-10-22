@@ -7,13 +7,20 @@ from io import BytesIO
 import pytesseract
 import base64
 
+
 from .funciones import limpiar_texto
 from .merge import merge_pdfs_from_uploadfiles, PdfMergeError, merge_pdfs_from_bytes
+from .funcionesValidacionAnexos import verificar_persona 
 
 app = FastAPI(title="API OCR/Limpieza/Merge PDF")
 
 class TextoLimpiezaRequest(BaseModel):
     texto: str
+
+class VerificacionRequest(BaseModel):
+    nombre: str
+    documento: str
+    texto_evaluar: str  # Se espera texto YA LIMPIO
 
 # Definición de las Clases para el Merge de PDF
 class PdfJson(BaseModel):
@@ -31,6 +38,9 @@ async def root():
         "endpoints": {
             "POST /convert-pdf": "multipart/form-data 'file': PDF -> texto por página",
             "POST /limpiar-texto": "json {'texto': 'string'} -> texto normalizado",
+            "POST /verificar-persona": "json {'nombre','documento','texto_evaluar(limpio)'} -> score (80 nombre + 20 doc -20 penalización)",  # <---
+            "POST /merge-pdf": "multipart/form-data 'files': [PDF...] -> PDF fusionado",
+            "POST /merge-pdf-json": "json {'files':[{'name','data_b64','mime_type'}]} -> PDF fusionado"
         }
     }
 
@@ -66,6 +76,25 @@ async def endpoint_limpiar_texto(data: TextoLimpiezaRequest):
         "texto_limpio": texto_limpio,
         "longitud": len(texto_limpio)
     }
+
+@app.post("/verificar-persona")
+async def endpoint_verificar_persona(payload: VerificacionRequest):
+    """
+    Verifica si el nombre/documento del payload están presentes en 'texto_evaluar' (ya limpio).
+    Score = Nombre (80) + Documento (20) + Penalización (-20 si no hay documento).
+    El objetivo es pasar con 60+ si hay buena coincidencia de nombre O documento.
+    Si no se detecta documento, siempre se penaliza fuertemente.
+    Solo se aceptan coincidencias exactas (sin fuzzy matching).
+    """
+    try:
+        resultado = verificar_persona(
+            nombre=payload.nombre,
+            documento=payload.documento,
+            texto_limpio=payload.texto_evaluar
+        )
+        return JSONResponse(content=resultado)
+    except Exception as e:
+        raise HTTPException(500, f"Error al verificar persona: {e}")
 
 @app.post("/merge-pdf", response_class=StreamingResponse)
 async def merge_pdf(files: List[UploadFile] = File(..., description="Uno o más PDFs")):
