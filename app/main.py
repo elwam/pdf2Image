@@ -142,3 +142,32 @@ async def merge_pdf_json(req: MergeJsonRequest):
     except Exception as e:
         raise HTTPException(500, f"Error interno al fusionar PDFs (JSON): {e}")
 
+@app.post("/pdf-to-images")
+async def pdf_to_images(file: UploadFile = File(...)):
+    try:
+        pdf_bytes = await file.read()
+        
+        # Convertimos el PDF a imágenes (una por página)
+        # Usamos 200 DPI para que el texto pequeño sea legible pero no pese demasiado
+        images = convert_from_bytes(pdf_bytes, dpi=200)
+        
+        base64_images = []
+
+        for img in images:
+            buffered = BytesIO()
+            # Guardamos como JPEG para reducir el peso del envío (calidad 85-90 es suficiente)
+            img.save(buffered, format="JPEG", quality=85)
+            
+            # Convertimos a base64
+            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            
+            # Formateamos como Data URI para que sea fácil de usar en n8n o LLM
+            base64_images.append(f"data:image/jpeg;base64,{img_str}")
+
+        return JSONResponse(content={
+            "filename": file.filename,
+            "total_pages": len(base64_images),
+            "images": base64_images
+        })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
