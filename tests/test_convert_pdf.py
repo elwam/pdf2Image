@@ -43,7 +43,7 @@ class TestEndpointConvertPdf:
 
         response = client.post("/convert-pdf", files=files)
         # Debería manejar el error gracefully
-        assert response.status_code in [200, 500]  # Puede variar según implementación
+        assert response.status_code in [200, 400, 500]  # Puede variar según implementación
 
     def test_convert_pdf_invalid_file(self):
         # Enviar archivo que no es PDF
@@ -51,7 +51,7 @@ class TestEndpointConvertPdf:
 
         response = client.post("/convert-pdf", files=files)
         # Debería manejar el error
-        assert response.status_code in [200, 500]
+        assert response.status_code in [200, 400, 500]
 
     def test_convert_pdf_no_file(self):
         # Enviar sin archivo

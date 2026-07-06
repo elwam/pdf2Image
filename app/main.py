@@ -1,7 +1,10 @@
+import asyncio
+import os
+
 from fastapi import FastAPI, File, UploadFile, HTTPException, Body
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
-from pdf2image import convert_from_bytes
+from pdf2image import convert_from_bytes, pdfinfo_from_bytes
 from typing import List, Optional
 from io import BytesIO
 import pytesseract
@@ -13,6 +16,64 @@ from .merge import merge_pdfs_from_uploadfiles, PdfMergeError, merge_pdfs_from_b
 from .funcionesValidacionAnexos import verificar_persona 
 
 app = FastAPI(title="API OCR/Limpieza/Merge PDF")
+
+PDF_DPI = int(os.getenv("PDF_DPI", "150"))
+MAX_PDF_PAGES = int(os.getenv("MAX_PDF_PAGES", "20"))
+OCR_CONCURRENCY = int(os.getenv("OCR_CONCURRENCY", "1"))
+OCR_QUEUE_TIMEOUT_SECONDS = int(os.getenv("OCR_QUEUE_TIMEOUT_SECONDS", "20"))
+TESSERACT_TIMEOUT_SECONDS = int(os.getenv("TESSERACT_TIMEOUT_SECONDS", "60"))
+
+ocr_semaphore = asyncio.Semaphore(max(1, OCR_CONCURRENCY))
+
+
+class PdfTooLargeError(Exception):
+    pass
+
+
+def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> list[dict]:
+    if not pdf_bytes:
+        raise ValueError("El archivo PDF está vacío.")
+
+    pdf_info = pdfinfo_from_bytes(pdf_bytes)
+    total_pages = int(pdf_info.get("Pages", 0))
+    if total_pages > MAX_PDF_PAGES:
+        raise PdfTooLargeError(
+            f"El PDF tiene {total_pages} páginas; el máximo permitido es {MAX_PDF_PAGES}."
+        )
+
+    images = convert_from_bytes(pdf_bytes, dpi=PDF_DPI)
+    ocr_results = []
+
+    for i, image in enumerate(images):
+        gray = image.convert("L")
+        text = pytesseract.image_to_string(
+            gray,
+            timeout=TESSERACT_TIMEOUT_SECONDS,
+        )
+        ocr_results.append({
+            "page": i + 1,
+            "text": text.strip()
+        })
+
+    return ocr_results
+
+
+async def run_limited_ocr(pdf_bytes: bytes) -> list[dict]:
+    try:
+        await asyncio.wait_for(
+            ocr_semaphore.acquire(),
+            timeout=OCR_QUEUE_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Servidor ocupado procesando OCR. Intente de nuevo en unos segundos.",
+        )
+
+    try:
+        return await asyncio.to_thread(extract_text_from_pdf_bytes, pdf_bytes)
+    finally:
+        ocr_semaphore.release()
 
 class TextoLimpiezaRequest(BaseModel):
     texto: str
@@ -49,22 +110,18 @@ async def root():
 async def convert_pdf(file: UploadFile = File(...)):
     try:
         pdf_bytes = await file.read()
-        # Convierte todas las páginas del PDF a imágenes con alta resolución
-        images = convert_from_bytes(pdf_bytes, dpi=200)
-        ocr_results = []
-
-        for i, image in enumerate(images):
-            # Opcional: convertir a escala de grises + mejorar contraste
-            gray = image.convert("L")
-            # Ejecutar OCR
-            text = pytesseract.image_to_string(gray)
-            # Agregar resultado al array
-            ocr_results.append({
-                "page": i + 1,
-                "text": text.strip()
-            })
-
+        ocr_results = await run_limited_ocr(pdf_bytes)
         return JSONResponse(content={"pages": ocr_results})
+    except PdfTooLargeError as e:
+        raise HTTPException(status_code=413, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        if "timeout" in str(e).lower():
+            raise HTTPException(status_code=504, detail=str(e))
+        return JSONResponse(status_code=500, content={"error": str(e)})
+    except HTTPException:
+        raise
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
